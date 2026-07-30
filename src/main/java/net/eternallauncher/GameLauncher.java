@@ -1,48 +1,57 @@
 package net.eternallauncher;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 public class GameLauncher {
 
-    public void launch(File gameDir, String version, String username) {
+    public void launch(File gameDir, LauncherConfig config, String username, String assetIndex) {
         try {
-            System.out.println("[GameLauncher] Подготовка параметров...");
+            String version = config.getVersion();
 
-            // Приводим директорию игры к каноничному пути
+            System.out.println("[GameLauncher] Подготовка к запуску версии " + version + "...");
+
             File canonicalGameDir = gameDir.getCanonicalFile();
-
-            // Папка с извлеченными .dll / .so / .dylib
             File nativesDir = new File(canonicalGameDir, "versions/" + version + "/natives");
 
-            // 1. Генерируем оффлайн UUID из никнейма
             String uuid = UUID.nameUUIDFromBytes(("OfflinePlayer:" + username).getBytes(StandardCharsets.UTF_8))
                     .toString().replace("-", "");
 
-            // 2. Собираем classpath (список всех .jar)
+            // Собираем Classpath СТРОГО для выбранной версии!
             String classpath = buildClasspath(canonicalGameDir, version);
 
-            // 3. Формируем список аргументов JVM и Minecraft
             List<String> command = new ArrayList<>();
-            command.add("java");
 
-            // Указываем путь к нативным библиотекам LWJGL
+            // Выбор бинарника Java и параметров памяти
+            command.add(config.getJavaExecutable());
+            command.add("-Xms" + config.getMinMemory());
+            command.add("-Xmx" + config.getMaxMemory());
+
+            // Доп. аргументы JVM
+            if (!config.getJvmArgs().isBlank()) {
+                for (String arg : config.getJvmArgs().split(" ")) {
+                    if (!arg.isBlank()) command.add(arg);
+                }
+            }
+
             command.add("-Djava.library.path=" + nativesDir.getAbsolutePath());
-
-            command.add("-Xms1024M"); // Минимальная ОЗУ (1 ГБ)
-            command.add("-Xmx4096M"); // Максимальная ОЗУ (4 ГБ)
             command.add("-cp");
             command.add(classpath);
 
-            // Главный класс игры
             command.add("net.minecraft.client.main.Main");
 
-            // --- АРГУМЕНТЫ MINECRAFT ---
+            // Передаем динамическую версию в аргументы игры
             command.add("--username");
             command.add(username);
 
@@ -55,26 +64,37 @@ public class GameLauncher {
             command.add("--assetsDir");
             command.add(new File(canonicalGameDir, "assets").getAbsolutePath());
 
+            // Используем динамический assetIndex вместо "5"
             command.add("--assetIndex");
-            command.add("5"); // Индекс ресурсов для 1.20.1
+            command.add(assetIndex);
 
             command.add("--uuid");
             command.add(uuid);
 
             command.add("--accessToken");
-            command.add("0"); // Фейковый токен для оффлайн-режима
+            command.add("0");
 
             command.add("--userType");
             command.add("legacy");
 
-            System.out.println("[GameLauncher] Запуск процесса Minecraft...");
+            // Разрешение экрана
+            command.add("--width");
+            command.add(config.getWindowWidth());
+
+            command.add("--height");
+            command.add(config.getWindowHeight());
+
+            if (config.isFullscreen()) {
+                command.add("--fullscreen");
+            }
+
+            System.out.println("[GameLauncher] Запуск процесса...");
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.directory(canonicalGameDir);
             pb.redirectErrorStream(true);
 
             Process process = pb.start();
 
-            // 4. Считываем логи игры в консоль
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
@@ -93,28 +113,65 @@ public class GameLauncher {
     private String buildClasspath(File gameDir, String version) {
         List<String> jars = new ArrayList<>();
 
-        // Добавляем файл самой версии (1.20.1.jar)
+        // 1. Читаем версионный JSON, чтобы узнать ТОЧНЫЙ список нужных JAR
+        File versionJsonFile = new File(gameDir, "versions/" + version + "/" + version + ".json");
+
+        if (versionJsonFile.exists()) {
+            try {
+                String jsonContent = Files.readString(versionJsonFile.toPath());
+                JsonObject versionObj = JsonParser.parseString(jsonContent).getAsJsonObject();
+                JsonArray libraries = versionObj.getAsJsonArray("libraries");
+
+                for (JsonElement elem : libraries) {
+                    JsonObject lib = elem.getAsJsonObject();
+                    if (!shouldUseLibrary(lib)) continue;
+
+                    if (lib.has("downloads")) {
+                        JsonObject downloads = lib.getAsJsonObject("downloads");
+                        if (downloads.has("artifact")) {
+                            String path = downloads.getAsJsonObject("artifact").get("path").getAsString();
+                            File libFile = new File(gameDir, "libraries/" + path);
+                            if (libFile.exists()) {
+                                jars.add(libFile.getAbsolutePath());
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("[GameLauncher] Ошибка чтения JSON версии при сборке Classpath: " + e.getMessage());
+            }
+        }
+
+        // 2. В самый конец обязательно добавляем сам client.jar нужной версии
         File clientJar = new File(gameDir, "versions/" + version + "/" + version + ".jar");
         jars.add(clientJar.getAbsolutePath());
-
-        // Рекурсивно собираем все .jar из папки libraries
-        File libDir = new File(gameDir, "libraries");
-        collectJars(libDir, jars);
 
         return String.join(File.pathSeparator, jars);
     }
 
-    private void collectJars(File dir, List<String> jars) {
-        if (!dir.exists()) return;
-        File[] files = dir.listFiles();
-        if (files == null) return;
+    private boolean shouldUseLibrary(JsonObject lib) {
+        if (!lib.has("rules")) return true;
 
-        for (File file : files) {
-            if (file.isDirectory()) {
-                collectJars(file, jars);
-            } else if (file.getName().endsWith(".jar")) {
-                jars.add(file.getAbsolutePath());
+        String osName = System.getProperty("os.name").toLowerCase();
+        boolean allow = false;
+
+        for (JsonElement ruleElem : lib.getAsJsonArray("rules")) {
+            JsonObject rule = ruleElem.getAsJsonObject();
+            String action = rule.get("action").getAsString();
+
+            if (rule.has("os")) {
+                String targetOs = rule.getAsJsonObject("os").get("name").getAsString();
+                boolean matches = (targetOs.equals("windows") && osName.contains("win")) ||
+                        (targetOs.equals("osx") && osName.contains("mac")) ||
+                        (targetOs.equals("linux") && osName.contains("linux"));
+
+                if (matches) {
+                    allow = action.equals("allow");
+                }
+            } else {
+                allow = action.equals("allow");
             }
         }
+        return allow;
     }
 }

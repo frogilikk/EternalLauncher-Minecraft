@@ -14,6 +14,8 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -24,7 +26,39 @@ public class Downloader {
             .followRedirects(HttpClient.Redirect.ALWAYS)
             .build();
 
-    public void downloadVersion(String targetVersion, File gameDir) throws Exception {
+    /**
+     * Получает список всех стабильных версий Minecraft (только type = "release").
+     * Игнорирует снапшоты, бета- и альфа-версии.
+     */
+    public List<String> getReleaseVersions() {
+        List<String> releaseVersions = new ArrayList<>();
+        try {
+            String manifestJson = sendGetRequest(MANIFEST_URL);
+            JsonObject manifest = JsonParser.parseString(manifestJson).getAsJsonObject();
+            JsonArray versions = manifest.getAsJsonArray("versions");
+
+            for (JsonElement element : versions) {
+                JsonObject versionObj = element.getAsJsonObject();
+                String type = versionObj.get("type").getAsString();
+
+                // Оставляем строго полноценные релизы
+                if ("release".equals(type)) {
+                    releaseVersions.add(versionObj.get("id").getAsString());
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[Downloader] Не удалось получить список версий из сети: " + e.getMessage());
+            // Резервный список на случай запуска без интернета
+            return List.of("1.21.1", "1.20.4", "1.20.1", "1.16.5", "1.12.2", "1.8.9");
+        }
+        return releaseVersions;
+    }
+
+    /**
+     * Скачивает версию и возвращает ID индекса ассетов (assetIndex),
+     * который понадобится для GameLauncher.
+     */
+    public String downloadVersion(String targetVersion, File gameDir) throws Exception {
         System.out.println("[Downloader] Получение главного манифеста версий...");
         String manifestJson = sendGetRequest(MANIFEST_URL);
 
@@ -41,7 +75,7 @@ public class Downloader {
         }
 
         if (versionJsonUrl == null) {
-            throw new RuntimeException("Версия " + targetVersion + " не найдена!");
+            throw new RuntimeException("Версия " + targetVersion + " не найдена в манифесте Mojang!");
         }
 
         System.out.println("[Downloader] Скачивание манифеста версии " + targetVersion + "...");
@@ -74,12 +108,13 @@ public class Downloader {
         for (JsonElement elem : libraries) {
             JsonObject lib = elem.getAsJsonObject();
 
-            // Пропускаем библиотеки, не подходящие для текущей ОС
             if (!shouldDownload(lib)) continue;
 
             JsonObject downloads = lib.getAsJsonObject("downloads");
+            if (downloads == null) continue;
 
-            if (downloads != null && downloads.has("artifact")) {
+            // Скачивание стандартного артефакта
+            if (downloads.has("artifact")) {
                 JsonObject artifact = downloads.getAsJsonObject("artifact");
                 String path = artifact.get("path").getAsString();
                 String url = artifact.get("url").getAsString();
@@ -92,20 +127,40 @@ public class Downloader {
                     downloadedCount++;
                 }
 
-                // Извлекаем нативные библиотеки (.dll/.so/.dylib) в папку natives
-                if (path.contains("native")) {
+                // Извлекаем нативы (поддержка старых и новых путей)
+                if (isNativeLibrary(lib, path)) {
                     extractNatives(targetLibFile, nativesDir);
+                }
+            }
+
+            // Поддержка нативов для старых версий (секция classifiers)
+            if (downloads.has("classifiers")) {
+                JsonObject classifiers = downloads.getAsJsonObject("classifiers");
+                String osName = getOsKey();
+
+                if (classifiers.has(osName)) {
+                    JsonObject nativeArtifact = classifiers.getAsJsonObject(osName);
+                    String path = nativeArtifact.get("path").getAsString();
+                    String url = nativeArtifact.get("url").getAsString();
+
+                    File targetNativeJar = new File(gameDir, "libraries/" + path);
+                    if (!targetNativeJar.exists()) {
+                        targetNativeJar.getParentFile().mkdirs();
+                        downloadFile(url, targetNativeJar.toPath());
+                        downloadedCount++;
+                    }
+                    extractNatives(targetNativeJar, nativesDir);
                 }
             }
         }
         System.out.println("[Downloader] Готово! Скачано новых библиотек: " + downloadedCount);
 
-        // 4. Скачиваем ресурсы (assets)
-        downloadAssets(versionObj, gameDir);
+        // 4. Скачиваем ресурсы (assets) и возвращаем assetId
+        return downloadAssets(versionObj, gameDir);
     }
 
-    private void downloadAssets(JsonObject versionObj, File gameDir) throws Exception {
-        if (!versionObj.has("assetIndex")) return;
+    private String downloadAssets(JsonObject versionObj, File gameDir) throws Exception {
+        if (!versionObj.has("assetIndex")) return "legacy";
 
         JsonObject assetIndex = versionObj.getAsJsonObject("assetIndex");
         String assetId = assetIndex.get("id").getAsString();
@@ -151,16 +206,28 @@ public class Downloader {
         }
 
         System.out.println("[Downloader] Загрузка ассетов завершена! Скачано новых: " + downloadedAssets);
+        return assetId;
     }
 
-    // Распаковка .dll/.so файлов из jar-архивов нативов
     private void extractNatives(File jarFile, File destDir) {
         try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(jarFile.toPath()))) {
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
                 String name = entry.getName();
+
+                // Пропускаем метаданные и директории
+                if (entry.isDirectory() || name.startsWith("META-INF")) {
+                    continue;
+                }
+
                 if (name.endsWith(".dll") || name.endsWith(".so") || name.endsWith(".dylib")) {
                     File outFile = new File(destDir, name);
+
+                    // Защита от Zip Slip уязвимости
+                    if (!outFile.getCanonicalPath().startsWith(destDir.getCanonicalPath())) {
+                        continue;
+                    }
+
                     if (!outFile.exists()) {
                         Files.copy(zis, outFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
                     }
@@ -169,7 +236,17 @@ public class Downloader {
         } catch (Exception ignored) {}
     }
 
-    // Простая проверка правил (rules) для фильтрации платформ
+    private boolean isNativeLibrary(JsonObject lib, String path) {
+        return path.contains("native") || lib.has("natives");
+    }
+
+    private String getOsKey() {
+        String osName = System.getProperty("os.name").toLowerCase();
+        if (osName.contains("win")) return "natives-windows";
+        if (osName.contains("mac")) return "natives-macos";
+        return "natives-linux";
+    }
+
     private boolean shouldDownload(JsonObject lib) {
         if (!lib.has("rules")) return true;
 

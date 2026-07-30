@@ -1,6 +1,8 @@
 plugins {
     java
     application
+    // Добавляем официальный плагин JavaFX
+    id("org.openjfx.javafxplugin") version "0.1.0"
 }
 
 group = "net.eternallauncher"
@@ -8,6 +10,12 @@ version = "1.0.0-SNAPSHOT"
 
 repositories {
     mavenCentral()
+}
+
+// Настраиваем модули JavaFX
+javafx {
+    version = "21.0.2"
+    modules("javafx.controls", "javafx.fxml")
 }
 
 dependencies {
@@ -25,5 +33,6 @@ java {
 }
 
 application {
-    mainClass.set("net.eternallauncher.Main")
+    // Точка входа для запуска GUI
+    mainClass.set("net.eternallauncher.LauncherApp")
 }

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.text.Font?>
+
+<VBox prefHeight="600.0" prefWidth="1000.0"
+      style="-fx-background-color: #0b0d12;"
+      xmlns="http://javafx.com/fxml/1"
+      xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="net.eternallauncher.MainController">
+
+    <!-- Верхняя полупрозрачная панель управления -->
+    <HBox alignment="CENTER_LEFT" spacing="15.0"
+          style="-fx-background-color: rgba(18, 21, 30, 0.6); -fx-border-color: rgba(255, 255, 255, 0.1); -fx-border-width: 0 0 1 0;">
+        <padding>
+            <Insets top="15.0" right="20.0" bottom="15.0" left="20.0"/>
+        </padding>
+
+        <!-- 1. Поле ввода никнейма (полупрозрачное) -->
+        <TextField fx:id="usernameField" promptText="Никнейм" prefHeight="45.0" prefWidth="180.0"
+                   style="-fx-background-color: rgba(255, 255, 255, 0.08); -fx-text-fill: white; -fx-prompt-text-fill: rgba(255, 255, 255, 0.4); -fx-font-size: 14px; -fx-background-radius: 8; -fx-border-color: rgba(255, 255, 255, 0.15); -fx-border-radius: 8; -fx-opacity: 0.85;"/>
+
+        <!-- 2. Выбор версии (полупрозрачный ComboBox) -->
+        <ComboBox fx:id="versionComboBox" prefHeight="45.0" prefWidth="260.0"
+                  style="-fx-background-color: rgba(255, 255, 255, 0.08); -fx-font-size: 14px; -fx-background-radius: 8; -fx-border-color: rgba(255, 255, 255, 0.15); -fx-border-radius: 8; -fx-opacity: 0.85;"/>
+
+        <!-- 3. Кнопка «ИГРАТЬ» (полупрозрачный зелёный акцент) -->
+        <Button fx:id="playButton" onAction="#onPlayButtonClick" text="ИГРАТЬ" prefHeight="45.0" prefWidth="150.0"
+                style="-fx-background-color: rgba(46, 204, 113, 0.75); -fx-text-fill: white; -fx-font-size: 16px; -fx-font-weight: bold; -fx-background-radius: 8; -fx-cursor: hand; -fx-opacity: 0.9;"/>
+
+        <!-- Пружина: сдвигает настройки в самый правый угол -->
+        <Region HBox.hgrow="ALWAYS" />
+
+        <!-- 4. Кнопка настроек ⚙ (полупрозрачная) -->
+        <Button fx:id="settingsButton" text="⚙" prefHeight="45.0" prefWidth="45.0"
+                style="-fx-background-color: rgba(255, 255, 255, 0.08); -fx-text-fill: rgba(255, 255, 255, 0.8); -fx-font-size: 18px; -fx-background-radius: 8; -fx-border-color: rgba(255, 255, 255, 0.15); -fx-border-radius: 8; -fx-cursor: hand; -fx-opacity: 0.85;"/>
+    </HBox>
+
+    <!-- Основная область приложения (фон #0b0d12) -->
+    <VBox alignment="CENTER" VBox.vgrow="ALWAYS" spacing="10.0">
+        <Label fx:id="statusLabel" text="Версия не выбрана" textFill="#a0a0a0">
+            <font>
+                <Font size="16.0"/>
+            </font>
+        </Label>
+    </VBox>
+
+</VBox>
