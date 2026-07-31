@@ -16,10 +16,9 @@ import java.util.UUID;
 
 public class GameLauncher {
 
-    public void launch(File gameDir, LauncherConfig config, String username, String assetIndex) {
+    public void launch(File gameDir, LauncherConfig config, String username, String assetIndex, Runnable onProcessEnd) {
         try {
             String version = config.getVersion();
-
             System.out.println("[GameLauncher] Подготовка к запуску версии " + version + "...");
 
             File canonicalGameDir = gameDir.getCanonicalFile();
@@ -28,17 +27,15 @@ public class GameLauncher {
             String uuid = UUID.nameUUIDFromBytes(("OfflinePlayer:" + username).getBytes(StandardCharsets.UTF_8))
                     .toString().replace("-", "");
 
-            // Собираем Classpath СТРОГО для выбранной версии!
             String classpath = buildClasspath(canonicalGameDir, version);
 
             List<String> command = new ArrayList<>();
 
-            // Выбор бинарника Java и параметров памяти
+            // Java & Память
             command.add(config.getJavaExecutable());
             command.add("-Xms" + config.getMinMemory());
             command.add("-Xmx" + config.getMaxMemory());
 
-            // Доп. аргументы JVM
             if (!config.getJvmArgs().isBlank()) {
                 for (String arg : config.getJvmArgs().split(" ")) {
                     if (!arg.isBlank()) command.add(arg);
@@ -49,9 +46,10 @@ public class GameLauncher {
             command.add("-cp");
             command.add(classpath);
 
+            // Главный класс
             command.add("net.minecraft.client.main.Main");
 
-            // Передаем динамическую версию в аргументы игры
+            // Аргументы игры
             command.add("--username");
             command.add(username);
 
@@ -64,7 +62,6 @@ public class GameLauncher {
             command.add("--assetsDir");
             command.add(new File(canonicalGameDir, "assets").getAbsolutePath());
 
-            // Используем динамический assetIndex вместо "5"
             command.add("--assetIndex");
             command.add(assetIndex);
 
@@ -77,7 +74,6 @@ public class GameLauncher {
             command.add("--userType");
             command.add("legacy");
 
-            // Разрешение экрана
             command.add("--width");
             command.add(config.getWindowWidth());
 
@@ -95,25 +91,34 @@ public class GameLauncher {
 
             Process process = pb.start();
 
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    System.out.println("[GAME] " + line);
+            // Чтение логов в ОТДЕЛЬНОМ фоновом потоке, чтобы UI не зависал
+            new Thread(() -> {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        System.out.println("[GAME] " + line);
+                    }
+                    int exitCode = process.waitFor();
+                    System.out.println("[GameLauncher] Игра закрыта с кодом: " + exitCode);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                } finally {
+                    if (onProcessEnd != null) {
+                        onProcessEnd.run();
+                    }
                 }
-            }
-
-            int exitCode = process.waitFor();
-            System.out.println("[GameLauncher] Игра закрыта с кодом: " + exitCode);
+            }).start();
 
         } catch (Exception e) {
             e.printStackTrace();
+            if (onProcessEnd != null) {
+                onProcessEnd.run();
+            }
         }
     }
 
     private String buildClasspath(File gameDir, String version) {
         List<String> jars = new ArrayList<>();
-
-        // 1. Читаем версионный JSON, чтобы узнать ТОЧНЫЙ список нужных JAR
         File versionJsonFile = new File(gameDir, "versions/" + version + "/" + version + ".json");
 
         if (versionJsonFile.exists()) {
@@ -142,7 +147,6 @@ public class GameLauncher {
             }
         }
 
-        // 2. В самый конец обязательно добавляем сам client.jar нужной версии
         File clientJar = new File(gameDir, "versions/" + version + "/" + version + ".jar");
         jars.add(clientJar.getAbsolutePath());
 

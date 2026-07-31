@@ -30,11 +30,8 @@ public class MainController {
         downloader = new Downloader();
 
         usernameField.setText(config.getDefaultUsername());
-
-        // 1. Устанавливаем подсказку в самом ComboBox, когда ничего не выбрано
         versionComboBox.setPromptText("Версия не выбрана");
 
-        // 2. Стилизуем ВСЕ ячейки внутри выпадающего списка (убираем белый фон)
         versionComboBox.setCellFactory(listView -> new javafx.scene.control.ListCell<>() {
             @Override
             protected void updateItem(String item, boolean empty) {
@@ -44,7 +41,6 @@ public class MainController {
                     setGraphic(null);
                 } else {
                     setText(item);
-                    // Тёмный полупрозрачный фон для элементов списка и белый текст
                     setStyle("-fx-background-color: rgba(18, 21, 30, 0.95); " +
                             "-fx-text-fill: white; " +
                             "-fx-padding: 8px 12px; " +
@@ -53,7 +49,6 @@ public class MainController {
             }
         });
 
-        // 3. Стилизуем выпадающий контейнер (popup)
         versionComboBox.showingProperty().addListener((obs, wasShowing, isShowing) -> {
             if (isShowing) {
                 Platform.runLater(() -> {
@@ -68,7 +63,6 @@ public class MainController {
             }
         });
 
-        // 4. Слушаем выбор пользователя в ComboBox и меняем statusLabel
         versionComboBox.valueProperty().addListener((observable, oldValue, newValue) -> {
             updateStatusLabel(newValue);
             if (newValue != null && !newValue.isEmpty()) {
@@ -78,7 +72,6 @@ public class MainController {
 
         statusLabel.setText("Загрузка списка версий...");
 
-        // 5. Загружаем список версий из сети в фоновом потоке
         new Thread(() -> {
             List<String> releaseVersions = downloader.getReleaseVersions();
 
@@ -95,9 +88,6 @@ public class MainController {
         }).start();
     }
 
-    /**
-     * Вспомогательный метод для обновления текста в statusLabel
-     */
     private void updateStatusLabel(String selectedVersion) {
         if (selectedVersion == null || selectedVersion.trim().isEmpty()) {
             statusLabel.setText("Версия не выбрана");
@@ -115,7 +105,6 @@ public class MainController {
 
         String selectedVersion = versionComboBox.getValue();
 
-        // Проверка: если версия так и не выбрана, не даём запустить
         if (selectedVersion == null || selectedVersion.isEmpty()) {
             statusLabel.setText("Ошибка: выберите версию перед запуском!");
             return;
@@ -134,11 +123,13 @@ public class MainController {
                 Platform.runLater(() -> statusLabel.setText("Запуск игры..."));
 
                 GameLauncher launcher = new GameLauncher();
-                launcher.launch(gameDir, config, finalUsername, assetIndex);
 
-                Platform.runLater(() -> {
-                    updateStatusLabel(versionComboBox.getValue());
-                    setUiDisabled(false);
+                // Передаем Runnable, который сработает при завершении процесса игры
+                launcher.launch(gameDir, config, finalUsername, assetIndex, () -> {
+                    Platform.runLater(() -> {
+                        updateStatusLabel(versionComboBox.getValue());
+                        setUiDisabled(false);
+                    });
                 });
 
             } catch (Exception e) {
