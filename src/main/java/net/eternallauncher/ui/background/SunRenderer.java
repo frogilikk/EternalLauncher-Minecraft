@@ -26,7 +26,7 @@ public class SunRenderer {
     private static final int PLASMA_CELL_COUNT = 0;
     private static final int CORONA_RAY_COUNT = 420;
     private static final int PROMINENCE_COUNT = 0;
-    private static final int PARTICLE_COUNT = 5600;
+    private static final int PARTICLE_COUNT = 2800;
     private static final int SPICULE_COUNT = 0;
     private static final int MAGNETIC_LOOP_COUNT = 0;
     private static final int PLASMA_RIVER_COUNT = 40;

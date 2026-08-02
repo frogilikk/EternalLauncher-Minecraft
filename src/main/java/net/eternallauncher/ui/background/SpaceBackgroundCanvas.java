@@ -13,12 +13,31 @@ import java.util.Random;
 
 public class SpaceBackgroundCanvas extends Canvas {
 
-    private double time = 0;
+    // --- РЕЖИМЫ ОТОБРАЖЕНИЯ ---
+    public enum Mode {
+        SUN,
+        EARTH,
+        BLACK_HOLE
+    }
+
+    // -------------------------------------------------------------
+    // МЕНЯЙ ЗДЕСЬ: Mode.EARTH или Mode.SUN
+    // -------------------------------------------------------------
+    private static final Mode CURRENT_MODE = Mode.SUN;
+
+    private double accumTime = 0;
+    private long lastNanoTime = 0;
+
     private final Star[] stars = new Star[250];
     private final SunRenderer sunRenderer;
+    private final EarthRenderer earthRenderer;
+    private final BlackHoleRenderer blackHoleRenderer;
 
     public SpaceBackgroundCanvas() {
+        // Инициализируем рендереры
         this.sunRenderer = new SunRenderer();
+        this.earthRenderer = new EarthRenderer(520); // Адекватный диаметр планеты в px
+        this.blackHoleRenderer = new BlackHoleRenderer();
 
         // Автоматическая привязка размеров к родительскому контейнеру
         parentProperty().addListener((obs, oldParent, newParent) -> {
@@ -28,8 +47,8 @@ public class SpaceBackgroundCanvas extends Canvas {
             }
         });
 
-        widthProperty().addListener(evt -> draw());
-        heightProperty().addListener(evt -> draw());
+        widthProperty().addListener(evt -> draw(0.016));
+        heightProperty().addListener(evt -> draw(0.016));
 
         // Генерация звёздного неба
         Random rnd = new Random();
@@ -42,18 +61,28 @@ public class SpaceBackgroundCanvas extends Canvas {
             );
         }
 
-        // Запуск общего таймера рендеринга
+        // Запуск таймера
         AnimationTimer timer = new AnimationTimer() {
             @Override
             public void handle(long now) {
-                time += 0.015;
-                draw();
+                if (lastNanoTime == 0) {
+                    lastNanoTime = now;
+                    return;
+                }
+
+                double deltaSeconds = (now - lastNanoTime) / 1_000_000_000.0;
+                lastNanoTime = now;
+
+                if (deltaSeconds > 0.1) deltaSeconds = 0.016;
+
+                accumTime += deltaSeconds;
+                draw(deltaSeconds);
             }
         };
         timer.start();
     }
 
-    private void draw() {
+    private void draw(double deltaSeconds) {
         double w = getWidth();
         double h = getHeight();
         if (w <= 0 || h <= 0) return;
@@ -62,8 +91,10 @@ public class SpaceBackgroundCanvas extends Canvas {
 
         // --- СЛОЙ 1: Глубокий Космос ---
         gc.setGlobalBlendMode(BlendMode.SRC_OVER);
+        gc.setGlobalAlpha(1.0);
+
         RadialGradient spaceBg = new RadialGradient(
-                0, 0, w * 0.1, h * 0.5, Math.max(w, h), false, CycleMethod.NO_CYCLE,
+                0, 0, w * 0.5, h * 0.5, Math.max(w, h), false, CycleMethod.NO_CYCLE,
                 new Stop(0.0, Color.web("#0e1017")),
                 new Stop(0.5, Color.web("#07080d")),
                 new Stop(1.0, Color.web("#020204"))
@@ -73,7 +104,7 @@ public class SpaceBackgroundCanvas extends Canvas {
 
         // --- СЛОЙ 2: Мерцающие Звёзды ---
         for (Star star : stars) {
-            double normalizedSin = (Math.sin(time * 2 + star.phase) + 1.0) / 2.0;
+            double normalizedSin = (Math.sin(accumTime * 2.0 + star.phase) + 1.0) / 2.0;
             double alpha = Math.max(0.05, Math.min(1.0, 0.2 + 0.7 * normalizedSin));
 
             Color starColor = (star.size > 1.2)
@@ -84,8 +115,14 @@ public class SpaceBackgroundCanvas extends Canvas {
             gc.fillOval(star.x * w, star.y * h, star.size, star.size);
         }
 
-        // --- СЛОЙ 3: Солнце и его эффекты ---
-        sunRenderer.render(gc, w, h, time);
+        // --- СЛОЙ 3: Отрисовка только ВЫБРАННОГО объекта ---
+        if (CURRENT_MODE == Mode.SUN) {
+            sunRenderer.render(gc, w, h, accumTime);
+        } else if (CURRENT_MODE == Mode.EARTH) {
+            earthRenderer.render(gc, w, h, deltaSeconds);
+        } else if (CURRENT_MODE == Mode.BLACK_HOLE) {
+           // blackHoleRenderer.render(gc, w, h, deltaSeconds);
+        }
     }
 
     @Override

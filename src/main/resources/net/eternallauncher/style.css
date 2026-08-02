@@ -1,0 +1,68 @@
+/* 1. Настраиваем закрытый ComboBox в точности как TextField */
+.combo-box {
+    -fx-background-color: rgba(0, 0, 0, 0.4);
+    -fx-background-radius: 8px;
+    -fx-border-color: rgba(255, 255, 255, 0.15);
+    -fx-border-radius: 8px;
+}
+
+.combo-box:hover {
+    -fx-border-color: rgba(255, 255, 255, 0.3);
+}
+
+.combo-box .arrow-button {
+    -fx-background-color: transparent;
+}
+
+.combo-box .arrow {
+    -fx-background-color: rgba(255, 255, 255, 0.7);
+}
+
+/* 2. Прозрачный контейнер всплывающего окна */
+.combo-box-popup {
+    -fx-background-color: transparent;
+}
+
+/* 3. Выпадающий список — теперь ровно с той же прозрачностью 0.4 */
+.combo-box-popup .list-view {
+    -fx-background-color: rgba(0, 0, 0, 0.4); /* Тот же уровень прозрачности, что и у полей */
+    -fx-background-radius: 8px;
+    -fx-border-color: rgba(255, 255, 255, 0.15);
+    -fx-border-radius: 8px;
+    -fx-padding: 4px;
+    -fx-pref-width: 250px;
+    -fx-min-width: 250px;
+    -fx-max-width: 250px;
+}
+
+/* Прозрачный внутренний поток списка */
+.combo-box-popup .list-view .virtual-flow {
+    -fx-background-color: transparent;
+}
+
+/* Полное скрытие полосы прокрутки */
+.combo-box-popup .scroll-bar:vertical,
+.combo-box-popup .scroll-bar:horizontal {
+    -fx-pref-width: 0;
+    -fx-pref-height: 0;
+    -fx-opacity: 0;
+}
+
+/* Ячейки списка */
+.combo-box-popup .list-cell {
+    -fx-background-color: transparent;
+    -fx-padding: 8px 12px;
+    -fx-font-size: 14px;
+}
+
+/* Подсветка при наведении мыши на пункт */
+.combo-box-popup .list-cell:filled:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.1);
+    -fx-background-radius: 4px;
+}
+
+/* Выбранный элемент */
+.combo-box-popup .list-cell:filled:selected {
+    -fx-background-color: rgba(255, 255, 255, 0.15);
+    -fx-background-radius: 4px;
+}
